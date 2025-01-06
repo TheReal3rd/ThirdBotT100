@@ -1,0 +1,14 @@
+{
+  "name": "ThirdBotT100",
+  "version": "1.0",
+  "authors": [
+    "Third"
+  ],
+  "description": "Third first gen tank AI.",
+  "homepage": "333rd.one",
+  "countryCodes": [
+    "gb"
+  ],
+  "platform": "JVM",
+  "programmingLang": "Java 11"
+}
