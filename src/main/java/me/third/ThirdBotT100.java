@@ -146,10 +146,11 @@ public class ThirdBotT100 extends Bot {
                     }
                 } else {
                     if(self.lockScanTickCount >= 5) {
-                        self.setRadarTurnRate(30);
                         if (self.lockScanToggle) {
+                            self.setRadarTurnRate(30);
                             self.turnRadarLeft(30);
                         } else {
+                            self.setRadarTurnRate(60);
                             self.turnRadarRight(60);
                             self.lockScanTickCount = 0;
                         }
@@ -163,18 +164,19 @@ public class ThirdBotT100 extends Bot {
                 GUN
                  */
                 targetAngle = self.gunBearingTo(targetInfo.getX(), targetInfo.getY());
-                //System.out.println(targetAngle);
+                System.out.println(targetAngle);
 
-                if (self.getGunTurnRemaining() <= 15) {
+                if (self.getGunTurnRemaining() <= 30) {
                     self.setGunTurnRate(self.getGunTurnRemaining());
                 } else {
-                    self.setGunTurnRate(15);
+                    self.setGunTurnRate(30);
                 }
 
-                if (targetAngle < 0) {
-                    self.setTurnGunLeft(targetAngle);
-                } else {
+                //Also look into using turnrate to snap rotate to the angle as we could rotate to 90 from 0 but set turn rate to 90 to do it in 1 tick. Calc the amount we need to turn then turn set turn rate and turn.
+                if (targetAngle < 0) {//TODO do this better. Should get current angle then measure the fastest turn dir to reach target angle.
                     self.setTurnGunRight(targetAngle);
+                } else {
+                    self.setTurnGunLeft(targetAngle);
                 }
 
                 if(self.getGunTurnRemaining() <= 2) {
