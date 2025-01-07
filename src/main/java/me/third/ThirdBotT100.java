@@ -3,9 +3,7 @@ package me.third;
 import dev.robocode.tankroyale.botapi.Bot;
 import dev.robocode.tankroyale.botapi.BotInfo;
 import dev.robocode.tankroyale.botapi.Color;
-import dev.robocode.tankroyale.botapi.events.BotDeathEvent;
-import dev.robocode.tankroyale.botapi.events.ScannedBotEvent;
-import dev.robocode.tankroyale.botapi.events.TickEvent;
+import dev.robocode.tankroyale.botapi.events.*;
 
 import java.util.HashMap;
 
@@ -18,11 +16,12 @@ public class ThirdBotT100 extends Bot {
     private boolean fullScan = false;
     private boolean lockScanToggle = false;
     private int lockScanMissCount = 0;
-    private int lockScanTickCount = 0;
 
     private double radarAngle = -1;
 
     private int lockedTarget = -1;
+
+    private int fireMissCount = 0;
     /*
     START
      */
@@ -63,6 +62,12 @@ public class ThirdBotT100 extends Bot {
     public void onTick(TickEvent tickEvent) {
         radarAngle = getRadarDirection();
         currentState.onUpdate(this);
+
+        if(fireMissCount >= 5) {
+            resetTargeting();
+            targetList.clear();
+            fireMissCount = 0;
+        }
     }
 
     @Override
@@ -89,7 +94,16 @@ public class ThirdBotT100 extends Bot {
             resetTargeting();
         }
         targetList.remove(botDeathEvent.getVictimId());
+    }
 
+    @Override
+    public void onBulletHitWall(BulletHitWallEvent bulletHitWallEvent) {
+        fireMissCount++;
+    }
+
+    @Override
+    public void onHitBot(HitBotEvent botHitBotEvent) {
+        fireMissCount--;
     }
 
     private enum States {
@@ -139,54 +153,55 @@ public class ThirdBotT100 extends Bot {
                         self.setRadarTurnRate(15);
                     }
 
-                    if (targetAngle < 0) {
-                        self.setTurnRadarLeft(targetAngle);
-                    } else {
-                        self.setTurnRadarRight(targetAngle);
+                    final TurnDir dir = self.bestTurnDirection(self.radarAngle, targetAngle);
+                    switch(dir) {
+                        case Right:
+                            self.setTurnRadarRight(targetAngle);
+                        case Left:
+                            self.setTurnRadarLeft(targetAngle);
                     }
+
                 } else {
-                    if(self.lockScanTickCount >= 5) {
-                        if (self.lockScanToggle) {
-                            self.setRadarTurnRate(30);
-                            self.turnRadarLeft(30);
-                        } else {
-                            self.setRadarTurnRate(60);
-                            self.turnRadarRight(60);
-                            self.lockScanTickCount = 0;
-                        }
-                        self.lockScanToggle = !self.lockScanToggle;
-                        self.lockScanMissCount++;
+                    if (self.lockScanToggle) {
+                        self.setRadarTurnRate(30);
+                        self.turnRadarLeft(60);
                     } else {
-                        self.lockScanTickCount++;
+                        self.setRadarTurnRate(30);
+                        self.turnRadarRight(60);
+
                     }
+                    self.lockScanToggle = !self.lockScanToggle;
+                    self.lockScanMissCount++;
                 }
                 /*
                 GUN
                  */
-                targetAngle = self.gunBearingTo(targetInfo.getX(), targetInfo.getY());
-                System.out.println(targetAngle);
 
-                if (self.getGunTurnRemaining() <= 30) {
+                //TODO do further testing of this.
+                double bulletSpeed = self.calcBulletSpeed(5);
+                double distance = self.distanceTo(targetInfo.getX(), targetInfo.getY());
+                final int predictTime = (int) Math.round(distance / bulletSpeed);
+
+                final Vector2D predictPos = self.calcPredictedPosition(predictTime, targetInfo);
+                targetAngle = self.gunBearingTo(predictPos.getPosX(), predictPos.getPosY());
+                //System.out.println(targetAngle);
+
+                if (self.getGunTurnRemaining() <= targetAngle) {
                     self.setGunTurnRate(self.getGunTurnRemaining());
                 } else {
-                    self.setGunTurnRate(30);
+                    self.setGunTurnRate(targetAngle);
                 }
 
-                //Also look into using turnrate to snap rotate to the angle as we could rotate to 90 from 0 but set turn rate to 90 to do it in 1 tick. Calc the amount we need to turn then turn set turn rate and turn.
-                if (targetAngle < 0) {//TODO do this better. Should get current angle then measure the fastest turn dir to reach target angle.
-                    self.setTurnGunRight(targetAngle);
-                } else {
-                    self.setTurnGunLeft(targetAngle);
+                final TurnDir dir = self.bestTurnDirection(self.getGunDirection(), targetAngle);
+                switch(dir) {
+                    case Right:
+                        self.setTurnGunRight(targetAngle);
+                    case Left:
+                        self.setTurnGunLeft(targetAngle);
                 }
 
-                if(self.getGunTurnRemaining() <= 2) {
-                    if (self.getGunHeat() <= 0) {
-                        if (targetInfo.getSpeed() <= 0) {
-                            self.fire(5);
-                        } else {
-                            self.fire(1);
-                        }
-                    }
+                if(self.getGunTurnRemaining() <= 0 && self.getGunHeat() <= 0) {
+                    self.fire(5);
                 }
             }
         };
@@ -209,11 +224,48 @@ public class ThirdBotT100 extends Bot {
         this.fullScan = false;
         this.lockScanToggle = false;
         this.lockScanMissCount = 0;
+        //this.targetList.clear();
+        //System.out.println("Reset Targeting state");
     }
 
     /*
     Utils
      */
+
+    public Vector2D calcPredictedPosition(int ticksAhead, TargetInfo targetInfo) {
+        double posX = targetInfo.getX();
+        double posY = targetInfo.getY();
+        double dir = targetInfo.getDirection();
+        double speed = targetInfo.getSpeed();
+
+        for(int ticks = 0; ticks != ticksAhead; ticks++) {
+            double angleRad = Math.toRadians(dir);
+            double velX = speed * Math.cos(angleRad);
+            double velY = speed * Math.sin(angleRad);
+
+            posX += velX;
+            posY += velY;
+        }
+
+        return new Vector2D(posX, posY);
+    }
+
+    public TurnDir bestTurnDirection(double fromAngle, double toAngle) {
+        double deltaTheta = toAngle - fromAngle;
+
+        deltaTheta = (deltaTheta + 180) % 360;
+        if(deltaTheta > 180) {
+            deltaTheta -= 360;
+        }
+
+        if (deltaTheta > 0) {
+            return TurnDir.Right;
+        } else if (deltaTheta < 0) {
+            return TurnDir.Left;
+        } else {
+            return TurnDir.Err;
+        }
+    }
 
     private TargetInfo findClosest() {
         TargetInfo closest = null;
@@ -229,6 +281,38 @@ public class ThirdBotT100 extends Bot {
             }
         }
         return closest;
+    }
+
+    public static enum TurnDir {
+        Left,
+        Right,
+        Err;
+    }
+
+    static class Vector2D {
+        double posX = 0;
+        double posY = 0;
+
+        public Vector2D(double posX, double posY) {
+            this.posX = posX;
+            this.posY = posY;
+        }
+
+        public void setPosX(double posX) {
+            this.posX = posX;
+        }
+
+        public void setPosY(double posY) {
+            this.posY = posY;
+        }
+
+        public double getPosX() {
+            return this.posX;
+        }
+
+        public double getPosY() {
+            return this.posY;
+        }
     }
 
     static class TargetInfo {
