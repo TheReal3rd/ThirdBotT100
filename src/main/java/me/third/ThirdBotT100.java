@@ -9,7 +9,7 @@ import java.util.HashMap;
 
 
 public class ThirdBotT100 extends Bot {
-    private final HashMap<Integer, TargetInfo> targetList = new HashMap<>();
+    private final HashMap<Integer, TargetInfo> targetList = new HashMap<>(10);
 
     private States currentState = States.Seek;
 
@@ -22,6 +22,7 @@ public class ThirdBotT100 extends Bot {
     private int lockedTarget = -1;
 
     private int fireMissCount = 0;
+
     /*
     START
      */
@@ -63,21 +64,27 @@ public class ThirdBotT100 extends Bot {
         radarAngle = getRadarDirection();
         currentState.onUpdate(this);
 
-        if(fireMissCount >= 5) {
+        if(fireMissCount >= 3) {
             resetTargeting();
             targetList.clear();
             fireMissCount = 0;
         }
     }
 
+
+    @Override
+    public void onRoundStarted(RoundStartedEvent roundStartedEvent) {
+        resetTargeting();
+        targetList.clear();
+    }
+
     @Override
     public void onScannedBot(ScannedBotEvent scannedBotEvent) {
         if(targetList.containsKey(scannedBotEvent.getScannedBotId())) {
-            targetList.replace(scannedBotEvent.getScannedBotId(), new TargetInfo(scannedBotEvent));
-            //System.out.println("Updating enemy tank!");
+            final TargetInfo targetInfo = targetList.get(scannedBotEvent.getScannedBotId());
+            targetInfo.updateState(scannedBotEvent);
         } else {
             targetList.putIfAbsent(scannedBotEvent.getScannedBotId(), new TargetInfo(scannedBotEvent));
-            //System.out.println("Found an enemy tank!");
         }
 
         if(lockedTarget != -1) {
@@ -85,7 +92,6 @@ public class ThirdBotT100 extends Bot {
                 lockScanMissCount = 0;
             }
         }
-
     }
 
     @Override
@@ -94,11 +100,6 @@ public class ThirdBotT100 extends Bot {
             resetTargeting();
         }
         targetList.remove(botDeathEvent.getVictimId());
-    }
-
-    @Override
-    public void onBulletHitWall(BulletHitWallEvent bulletHitWallEvent) {
-        fireMissCount++;
     }
 
     @Override
@@ -111,7 +112,7 @@ public class ThirdBotT100 extends Bot {
 
             @Override
             public void onUpdate(ThirdBotT100 self) {
-
+                self.setGunColor(Color.GREEN);
                 if(self.fullScan) {
                     if (!self.targetList.isEmpty()) {
                         final TargetInfo closestTarget = self.findClosest();
@@ -121,19 +122,20 @@ public class ThirdBotT100 extends Bot {
                         }
                     }
                 } else {
-                    self.setRadarTurnRate(10);
+                    self.setRadarTurnRate(20);
                     if (self.getRadarTurnRemaining() <= 0) {
-                        self.turnRadarLeft(15);
+                        self.turnRadarLeft(20);
                     }
                     self.fullScan = (int) self.radarAngle >= 360 - (self.getRadarTurnRate() + 2);
                 }
             }
 
         },
-        Attack() {
+        Destory() {
 
             @Override
             public void onUpdate(ThirdBotT100 self) {
+                self.setGunColor(Color.RED);
                 if(self.lockedTarget == -1) {
                     self.resetTargeting();
                     return;
@@ -161,14 +163,13 @@ public class ThirdBotT100 extends Bot {
                             self.setTurnRadarLeft(targetAngle);
                     }
 
-                } else {
+                } else {//TODO create a system to linearly decrease the scan area over time to get info faster.? But first improve targeting Radar!
                     if (self.lockScanToggle) {
                         self.setRadarTurnRate(30);
                         self.turnRadarLeft(60);
                     } else {
                         self.setRadarTurnRate(30);
                         self.turnRadarRight(60);
-
                     }
                     self.lockScanToggle = !self.lockScanToggle;
                     self.lockScanMissCount++;
@@ -177,17 +178,22 @@ public class ThirdBotT100 extends Bot {
                 GUN
                  */
 
-                //TODO do further testing of this.
-                double bulletSpeed = self.calcBulletSpeed(5);
+                double bulletSpeed = self.calcBulletSpeed(5);// Speed of 5 is 11
                 double distance = self.distanceTo(targetInfo.getX(), targetInfo.getY());
                 final int predictTime = (int) Math.round(distance / bulletSpeed);
+                final int fireDelay = (int) ((int) self.getGunHeat() / self.getGunCoolingRate());
+                final int timeSinceLastUpdate = targetInfo.getTurn() - targetInfo.getPrevTurn();
 
-                final Vector2D predictPos = self.calcPredictedPosition(predictTime, targetInfo);
+                final int futureTickAmount = (predictTime + fireDelay + timeSinceLastUpdate);
+
+                //System.out.println(fireDelay);
+
+                final Vector2D predictPos = self.calcPredictedPosition(futureTickAmount, targetInfo);
                 targetAngle = self.gunBearingTo(predictPos.getPosX(), predictPos.getPosY());
                 //System.out.println(targetAngle);
 
                 if (self.getGunTurnRemaining() <= targetAngle) {
-                    self.setGunTurnRate(self.getGunTurnRemaining());
+                    self.setGunTurnRate(Math.min(1, self.getGunTurnRemaining()));
                 } else {
                     self.setGunTurnRate(targetAngle);
                 }
@@ -200,7 +206,7 @@ public class ThirdBotT100 extends Bot {
                         self.setTurnGunLeft(targetAngle);
                 }
 
-                if(self.getGunTurnRemaining() <= 0 && self.getGunHeat() <= 0) {
+                if(self.getGunTurnRemaining() <= 0.5 && self.getGunHeat() <= 0) {
                     self.fire(5);
                 }
             }
@@ -215,7 +221,7 @@ public class ThirdBotT100 extends Bot {
 
     public void setLockedTarget(TargetInfo targetInfo) {
         this.lockedTarget = targetInfo.getScannedBotId();
-        this.currentState = States.Attack;
+        this.currentState = States.Destory;
     }
 
     public void resetTargeting() {
@@ -232,13 +238,20 @@ public class ThirdBotT100 extends Bot {
     Utils
      */
 
+    public double distanceBetween(double posX, double posY, double posX1, double posY1) {
+        return Math.hypot(posX - posX1, posY - posY1);
+    }
+
     public Vector2D calcPredictedPosition(int ticksAhead, TargetInfo targetInfo) {
         double posX = targetInfo.getX();
         double posY = targetInfo.getY();
         double dir = targetInfo.getDirection();
         double speed = targetInfo.getSpeed();
 
+        double turnSpeed = targetInfo.getDirection() - targetInfo.getPrevDirection();
+
         for(int ticks = 0; ticks != ticksAhead; ticks++) {
+            dir += turnSpeed;
             double angleRad = Math.toRadians(dir);
             double velX = speed * Math.cos(angleRad);
             double velY = speed * Math.sin(angleRad);
@@ -319,10 +332,17 @@ public class ThirdBotT100 extends Bot {
         private final int scannedByBotId;
         private final int scannedBotId;
         private final double energy;
-        private final double x;
-        private final double y;
-        private final double direction;
-        private final double speed;
+        private double x;
+        private double y;
+        private double direction;
+        private double speed;
+        private int turn;
+
+        private double prevX = 0;
+        private double prevY = 0;
+        private double prevDirection = 0;
+        private double prevSpeed = 0;
+        private int prevTurn = 0;
 
         public TargetInfo(ScannedBotEvent event) {
             this.scannedByBotId = event.getScannedByBotId();
@@ -332,6 +352,21 @@ public class ThirdBotT100 extends Bot {
             this.y = event.getY();
             this.direction = event.getDirection();
             this.speed = event.getSpeed();
+            this.turn = event.getTurnNumber();
+        }
+
+        public void updateState(ScannedBotEvent event) {
+            this.prevX = x;
+            this.prevY = y;
+            this.prevDirection = direction;
+            this.prevSpeed = speed;
+            this.prevTurn = turn;
+
+            this.x = event.getX();
+            this.y = event.getY();
+            this.direction = event.getDirection();
+            this.speed = event.getSpeed();
+            this.turn = event.getTurnNumber();
         }
 
         public int getScannedByBotId() {
@@ -360,6 +395,30 @@ public class ThirdBotT100 extends Bot {
 
         public double getSpeed() {
             return this.speed;
+        }
+
+        public double getPrevX() {
+            return prevX;
+        }
+
+        public double getPrevY() {
+            return prevY;
+        }
+
+        public double getPrevSpeed() {
+            return prevSpeed;
+        }
+
+        public double getPrevDirection() {
+            return prevDirection;
+        }
+
+        public int getTurn() {
+            return turn;
+        }
+
+        public int getPrevTurn() {
+            return prevTurn;
         }
     }
 
