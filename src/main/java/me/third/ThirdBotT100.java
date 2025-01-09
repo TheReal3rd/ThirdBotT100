@@ -206,7 +206,7 @@ public class ThirdBotT100 extends Bot {
                         self.setTurnGunLeft(targetAngle);
                 }
 
-                if(self.getGunTurnRemaining() <= 0.5 && self.getGunHeat() <= 0) {
+                if(self.getGunTurnRemaining() <= 0 && self.getGunHeat() <= 0) {
                     self.fire(5);
                 }
             }
