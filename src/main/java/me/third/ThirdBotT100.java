@@ -131,7 +131,7 @@ public class ThirdBotT100 extends Bot {
             }
 
         },
-        Destory() {
+        Destroy() {
 
             @Override
             public void onUpdate(ThirdBotT100 self) {
@@ -142,7 +142,7 @@ public class ThirdBotT100 extends Bot {
                 }
 
                 /*
-                RADAR
+                RADAR TODO redo the radar targeting code.
                  */
                 TargetInfo targetInfo = self.targetList.get(self.lockedTarget);
                 double targetAngle = self.radarBearingTo(targetInfo.getX(), targetInfo.getY());
@@ -180,11 +180,11 @@ public class ThirdBotT100 extends Bot {
 
                 double bulletSpeed = self.calcBulletSpeed(5);// Speed of 5 is 11
                 double distance = self.distanceTo(targetInfo.getX(), targetInfo.getY());
-                final int predictTime = (int) Math.round(distance / bulletSpeed);
-                final int fireDelay = (int) ((int) self.getGunHeat() / self.getGunCoolingRate());
+                final int bulletTravelTime = (int) Math.round(distance / bulletSpeed);
+                //final int coolDownTime = (int) ((int) self.getGunHeat() / self.getGunCoolingRate());
                 final int timeSinceLastUpdate = targetInfo.getTurn() - targetInfo.getPrevTurn();
 
-                final int futureTickAmount = (predictTime + fireDelay + timeSinceLastUpdate);
+                final int futureTickAmount = (bulletTravelTime + timeSinceLastUpdate);
 
                 //System.out.println(fireDelay);
 
@@ -221,7 +221,7 @@ public class ThirdBotT100 extends Bot {
 
     public void setLockedTarget(TargetInfo targetInfo) {
         this.lockedTarget = targetInfo.getScannedBotId();
-        this.currentState = States.Destory;
+        this.currentState = States.Destroy;
     }
 
     public void resetTargeting() {
@@ -248,20 +248,32 @@ public class ThirdBotT100 extends Bot {
         double dir = targetInfo.getDirection();
         double speed = targetInfo.getSpeed();
 
-        double turnSpeed = targetInfo.getDirection() - targetInfo.getPrevDirection();
+        //TODO fix the issue here: The turn rate is calculated with the guess we'll get between two turns but we may get our next update later such as 5 or 2 ticks. meaning we're over or under calculating the turn rate.
+        double turnRate = targetInfo.getPrevDirection() - targetInfo.getDirection();
 
         for(int ticks = 0; ticks != ticksAhead; ticks++) {
-            dir += turnSpeed;
             double angleRad = Math.toRadians(dir);
             double velX = speed * Math.cos(angleRad);
             double velY = speed * Math.sin(angleRad);
 
+            if(posX + velX >= getArenaWidth() || posX <= 0 || posY + velY >= getArenaHeight() || posY <= 0) {//TODo put the targets width(Its a circle) into account too.
+                return new Vector2D(posX, posY);
+            }
+
             posX += velX;
             posY += velY;
+            dir = (dir + turnRate) % 360;//TODO research if this is a correct way of adding a turn rate and clamping it within the bounds of an angle.
+            System.out.printf("Predict: (%f %f)  Angle: %f | TRate %f %n", posX, posY, dir, turnRate);
         }
 
         return new Vector2D(posX, posY);
     }
+
+
+    public void raycastSimHit() {
+        //TODO create a raycast sim then fire a fake bullet and see if it his the predicted target and also maybe see if we can sim it to the real data of the enemy.
+    }
+
 
     public TurnDir bestTurnDirection(double fromAngle, double toAngle) {
         double deltaTheta = toAngle - fromAngle;
